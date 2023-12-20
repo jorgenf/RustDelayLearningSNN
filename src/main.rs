@@ -26,10 +26,11 @@ fn main() {
         pool.join();
         */
         let mut pop = Population::new(0.1, String::from("."), String::from("test"), false);
-            pop.create_feed_forward(10, 100, 1.0, 1.0, 10.0, 1.0, 10.0);
-            
+            pop.create_feed_forward(2, 1, 1.0, 0.1, 1.0, 200.0, 210.0);
+
+            pop.create_input(vec![0], 0.8, 200.0);
                 
-                pop.run(1000.0);
+            pop.run(5.0);
          
         
          
