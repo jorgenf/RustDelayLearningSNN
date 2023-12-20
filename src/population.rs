@@ -1,11 +1,9 @@
-use std::mem::ManuallyDrop;
-use std::{collections::HashMap, ffi::NulError, ops::Deref};
+
+use std::collections::HashMap;
 use rand::Rng;
 use std::io::Write;
-use std::time::{Duration, Instant};
-use std::cmp;
-use libm::tanh;
-use round::round;
+use std::time::Instant;
+
 
 static mut MAX_DELAY : f32 = 20.0;
 static mut WEIGHT : f32 = 10.0;
@@ -49,7 +47,6 @@ impl Population{
     }
 
     fn update(&mut self){
-        println!("\n");
         for (_id, input) in &mut self.inputs{
             let spike = input.update(self.t, self.dt, 0.0);
             if spike{
@@ -61,7 +58,6 @@ impl Population{
             
         }
         for (_id, neuron )in &mut self.neurons{
-            println!("Neuron ID: {}", _id);
             let mut i = 0.0;
             for input_connection in &mut neuron.input_connections{
                 i += self.input_connections.get_mut(&input_connection).unwrap().get_spike(self.t);
@@ -70,7 +66,6 @@ impl Population{
                 let syn = self.synapses.get_mut(pre_syn).unwrap();
                 let spikes = syn.get_spikes(self.t);
                 if spikes != 0.0{
-                    println!("Incoming spikes");
                 }
                 i += spikes;
             }
@@ -93,7 +88,6 @@ impl Population{
                 }
                 for post_syn in &mut neuron.post_synapses{
                     let syn = self.synapses.get_mut(&post_syn).unwrap();
-                    println!("Adding spike from neuron {} to synapse {}, post neuron {}", neuron.id, syn.id, syn.post_neuron);
                     syn.add_spike(self.t);
                 }
             }
@@ -107,7 +101,6 @@ impl Population{
         println!("Number of synapses: {}", self.synapses.len());
         let start = Instant::now();
         while self.t < duration {
-            println!("T: {}", self.t);
             self.update();
             let progress = (self.t / duration)*100.0;
             let _ = std::io::stdout().flush().unwrap();
@@ -173,14 +166,12 @@ impl Population{
             self.add_neuron();
         }
         for layer in 0..(layers-1){
-            println!("Layer {}", layer);
             for neuron_i in nodes_per_layer * layer..nodes_per_layer * (layer + 1){
                     for neuron_j in nodes_per_layer*(layer + 1)..nodes_per_layer*(layer+2){
                         if prob < p{
                             let w = f32::round(rng.gen_range(w_min..w_max) * 10.0)/10.0;
                             let d = f32::round(rng.gen_range(d_min..d_max) * 10.0)/10.0;
-                            println!("DELAY: {}", d);
-                            self.create_synapse(neuron_i, neuron_j, w, d, 3.0, 3.0, true, false, false, self.declining_learning_rate)
+                            self.create_synapse(neuron_i, neuron_j, w, d, 7.0, 7.0, true, false, false, self.declining_learning_rate)
                         }
                 }
             }
@@ -329,13 +320,10 @@ impl Synapse{
     }
 
     fn get_spikes(&mut self, t : f32)->f32{
-        println!("Spikes in synapse: {}", self.spikes.len());
         let mut i = 0.0;
         let mut index = 0;
         for spike in &mut self.spikes{
-            println!("Spike: {} delay {}  t {} w {}", spike, self.delay, t, self.weight);
             if *spike + self.delay == t{
-                println!("SPIKE!");
                 i += self.weight;
                 self.spikes.remove(index);
                 break;
@@ -366,7 +354,10 @@ impl Synapse{
             for i in post{
                 sum_post += i;
             }
-            self.g_func(sum_post/ post_len as f32);
+            if pre.is_empty(){
+                self.g_func(sum_post/ post_len as f32);
+            }
+            
         }
         pre  
         }
@@ -375,6 +366,7 @@ impl Synapse{
         let delta_d = -3.0 * libm::tanh((delta_t_dist as f64) / 3.0);
         unsafe{
             self.delay += f32::min(delta_d as f32, MAX_DELAY);
+            self.delay = f32::max(self.delay, 0.1);
             self.delay = f32::round(self.delay * 10.0)/10.0;
         }
         
@@ -383,9 +375,10 @@ impl Synapse{
     fn g_func(&mut self, avg_post : f32){
         let dd = (3.0 / 2.0) * libm::tanh((2.5625 - 0.625 * avg_post) as f64) + 1.5;
         unsafe{
-            self.delay += f32::min(dd as f32, MAX_DELAY);
-            self.delay = f32::round(self.delay * 10.0)/10.0;
-        }   
+            self.delay += dd as f32;
+            self.delay = f32::min(f32::round(self.delay * 10.0)/10.0, MAX_DELAY);
+            
+        }
     }
 
 }
