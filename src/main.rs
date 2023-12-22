@@ -1,5 +1,7 @@
 mod population;
 use population::Population;
+mod nodes;
+mod connections;
 use std::thread;
 use std::time::Duration;
 use threadpool::ThreadPool;
@@ -26,11 +28,16 @@ fn main() {
         pool.join();
         */
         let mut pop = Population::new(0.1, String::from("."), String::from("test"), false);
-            pop.create_feed_forward(100, 1000, 1.0, 0.1, 20.0, 20.0, 40.0);
-
-            pop.create_input((0..100).collect(), 0.01, 200.0);
+            //pop.create_feed_forward(2, 2, 1.0, 0.1, 20.0, 200.0, 200.1);
+            pop.create_neuron();
+            pop.create_neuron();
+            pop.create_neuron();
+            pop.create_synapse(0, 2, 200.0, 10.0, 7.0, 7.0, true, false, false, false);
+            pop.create_synapse(1, 2, 200.0, 10.0, 7.0, 7.0, true, false, false, false);
+            pop.create_input(vec![0], 0.0, vec![1.0], 200.0);
+            pop.create_input(vec![1], 0.0, vec![4.0], 200.0);
                 
-            pop.run(500.0);
+            pop.run(20.0);
          
         
          
