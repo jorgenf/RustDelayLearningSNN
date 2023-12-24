@@ -19,7 +19,8 @@ pub struct Neuron{
     pub input_connections : Vec<i32>,
     v_hist : Vec<f32>,
     u_hist : Vec<f32>,
-    pub spikes : Vec<f32>
+    pub spikes : Vec<f32>,
+    inputs : Vec<(f32, f32)>
 }
 
 impl Neuron{
@@ -39,6 +40,7 @@ impl Neuron{
                 v_hist : Vec::new(),
                 u_hist : Vec::new(),
                 spikes : Vec::new(),
+                inputs : Vec::new()
                 }
 }
     pub fn get_synapse_ids(&mut self)->(&mut Vec<i32>, &mut Vec<i32>){
@@ -51,8 +53,23 @@ impl Neuron{
 
 impl Node for Neuron{
     fn update(&mut self, t : f32, dt : f32, i : f32) ->bool{
+        let mut input : f32 = 0.0;
+        for (index, (inp, counter)) in self.inputs.iter_mut().enumerate(){
+            *counter -= dt;
+            if counter > &mut 0.0{
+                input += *inp;
+            }else{
+                self.inputs.remove(index);
+            }
+        }
+        if i != 0.0{
+            self.inputs.push((i, 10.0));
+        }
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
+        if self.id == 2{
+            println!("V: {}", self.v)
+        }
         self.u += self.a * (self.b * self.v - self.u) * dt;
         if self.v > self.th{
             self.v = self.th;

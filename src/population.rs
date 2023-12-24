@@ -75,6 +75,10 @@ impl Population{
                 println!("D  {}: {}",syn.pre_neuron, syn.delay);
                 i += spikes;
             }
+            if *_id == 2{
+                println!("I: {}",i);
+            }
+           
             let spike : bool = node_update(neuron, self.t, self.dt, i);
             if spike{
                 let mut arrival_times: Vec<f32> = Vec::new();
