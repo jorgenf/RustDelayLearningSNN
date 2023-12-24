@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use rand::Rng;
 use std::io::Write;
 use std::time::Instant;
+use memory_stats::memory_stats;
 
 
 static mut WEIGHT : f32 = 10.0;
@@ -106,6 +107,7 @@ impl Population{
         println!("Number of neurons: {}", self.neurons.len());
         println!("Number of synapses: {}", self.synapses.len());
         let start = Instant::now();
+        let mut max_mem = 0.0;
         while self.t < duration {
             let progress = (self.t / duration)*100.0;
             let _ = std::io::stdout().flush().unwrap();
@@ -113,6 +115,9 @@ impl Population{
             self.update();
             self.t += self.dt;
             self.t = f32::round(self.t*10.0)/10.0;
+            if let Some(usage) = memory_stats() {
+                max_mem = f32::max(usage.physical_mem as f32, max_mem);
+            }
         }
         let stop = start.elapsed();
         println!("\n\n--- Simulation finished ---");
@@ -130,6 +135,7 @@ impl Population{
         println!("Spikes: {:?}", self.neurons.get_mut(&0).unwrap().spikes);
         println!("Spikes: {:?}", self.neurons.get_mut(&1).unwrap().spikes);
         println!("Spikes: {:?}", self.neurons.get_mut(&2).unwrap().spikes);
+        println!("Max memory usage: {:.1}MB", max_mem/1000000.0);
         
     }
 

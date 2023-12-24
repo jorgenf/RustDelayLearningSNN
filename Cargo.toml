@@ -10,3 +10,5 @@ rand = "0.8.4"
 threadpool = "1.8.0"
 libm = "0.2.7"
 round = "0.1.2"
+memory-stats = "1.1.0"
+
