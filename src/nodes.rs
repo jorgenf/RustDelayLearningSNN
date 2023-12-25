@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use rand::Rng;
 
+use crate::population::Population;
+
 pub trait Node{
     fn update(&mut self, t : f32, dt : f32, i : f32)->bool;
 }
@@ -52,22 +54,29 @@ impl Neuron{
 }
 
 impl Node for Neuron{
-    fn update(&mut self, t : f32, dt : f32, i : f32) ->bool{
-        let mut input : f32 = 0.0;
+    fn update(&mut self, t : f32, dt : f32, input : f32) ->bool{
+        let mut i : f32 = input;
+        let mut remove_indexes : Vec<i32> = Vec::new();
         for (index, (inp, counter)) in self.inputs.iter_mut().enumerate(){
             *counter -= dt;
             if counter > &mut 0.0{
-                input += *inp;
+                i += *inp;
             }else{
-                self.inputs.remove(index);
+                remove_indexes.push(index as i32);
             }
         }
-        if i != 0.0{
-            self.inputs.push((i, 10.0));
+        for ri in remove_indexes{
+            self.inputs.remove(ri as usize);
+        }
+        if input != 0.0{
+            self.inputs.push((input, 1.0));
+        }
+        if self.id == 0{
+            println!("Input: {:.?}", self.inputs);
         }
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
-        if self.id == 2{
+        if self.id == 0{
             println!("V: {}", self.v)
         }
         self.u += self.a * (self.b * self.v - self.u) * dt;
@@ -80,6 +89,7 @@ impl Node for Neuron{
             self.v = self.c;
             self.u += self.d;
             self.spikes.push(t);
+            self.inputs.clear();
             return true;
         }else{
             return false;

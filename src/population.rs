@@ -135,6 +135,8 @@ impl Population{
         for (id, neuron) in &mut self.neurons{
             println!("ID: {} Spikes: {}", id, neuron.spikes.len());
         }
+        println!("Input Spikes: {:?}", self.inputs.get_mut(&0).unwrap().spikes);
+        println!("Input Spikes: {:?}", self.inputs.get_mut(&1).unwrap().spikes);
 
         println!("Spikes: {:?}", self.neurons.get_mut(&0).unwrap().spikes);
         println!("Spikes: {:?}", self.neurons.get_mut(&1).unwrap().spikes);

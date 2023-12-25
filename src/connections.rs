@@ -15,7 +15,7 @@ pub struct Synapse{
     weight_trainable: bool,
     partial_delay_learning : bool,
     declining_learning_rate :bool,
-    delay_history : HashMap<String,f32>,
+    delay_history : Vec<f32>,
     spikes : Vec<f32>, 
     spike_history : Vec<f32>,
     average_arrival_time : f32,  
@@ -36,7 +36,7 @@ impl Synapse{
             weight_trainable,
             partial_delay_learning, 
             declining_learning_rate, 
-            delay_history: HashMap::new(), 
+            delay_history: Vec::new(), 
             spikes: Vec::new(),
             spike_history : Vec::new(),
             average_arrival_time : 0.0
@@ -63,14 +63,17 @@ impl Synapse{
         return i;
     }
 
-    pub fn get_spike_history(&mut self)-> &mut HashMap<String, f32>{
+    pub fn get_spike_history(&mut self)-> &mut Vec<f32>{
         &mut self.delay_history
+    }
+
+    pub fn update(&mut self){
+        self.delay_history.push(self.delay);
     }
 
     pub fn get_avg_arrival_t(&mut self, spike_time : f32)-> Vec<f32>{
         let mut pre : Vec<f32> = Vec::new();
         if self.delay_trainable{
-            
             let mut post : Vec<f32> = Vec::new();
             for syn_spike in &mut self.spike_history{
                 let t_dist = (*syn_spike + self.delay) - spike_time; 
