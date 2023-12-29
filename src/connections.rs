@@ -6,7 +6,7 @@ static mut MAX_DELAY : f32 = 20.0;
 pub struct Synapse{
     pub id : i32,
     pub pre_neuron : i32,
-    post_neuron : i32,
+    pub post_neuron : i32,
     weight : f32,
     pub delay : f32,
     pre_window : f32,
@@ -15,7 +15,7 @@ pub struct Synapse{
     weight_trainable: bool,
     partial_delay_learning : bool,
     declining_learning_rate :bool,
-    delay_history : Vec<f32>,
+    delay_history : Vec<(f32, f32)>,
     spikes : Vec<f32>, 
     spike_history : Vec<f32>,
     average_arrival_time : f32,  
@@ -63,12 +63,12 @@ impl Synapse{
         return i;
     }
 
-    pub fn get_spike_history(&mut self)-> &mut Vec<f32>{
+    pub fn get_spike_history(&mut self)-> &mut Vec<(f32, f32)>{
         &mut self.delay_history
     }
 
-    pub fn update(&mut self){
-        self.delay_history.push(self.delay);
+    pub fn update(&mut self, t : f32){
+        self.delay_history.push((t, self.delay));
     }
 
     pub fn get_avg_arrival_t(&mut self, spike_time : f32)-> Vec<f32>{
@@ -121,6 +121,10 @@ impl Synapse{
             self.delay = f32::min(f32::round(self.delay * 10.0)/10.0, MAX_DELAY);
             
         }
+    }
+
+    pub fn get_delays(&mut self)->&mut Vec<(f32, f32)>{
+        &mut self.delay_history
     }
 
 }

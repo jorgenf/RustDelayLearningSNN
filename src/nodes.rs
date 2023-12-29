@@ -48,9 +48,19 @@ impl Neuron{
     pub fn get_synapse_ids(&mut self)->(&mut Vec<i32>, &mut Vec<i32>){
         (&mut self.pre_synapses, &mut self.post_synapses)
     }
+
     pub fn get_v(&mut self)-> &mut Vec<f32>{
         &mut self.v_hist
     }
+
+    pub fn get_u(&mut self)-> &mut Vec<f32>{
+        &mut self.u_hist
+    }
+
+    pub fn get_spikes(&mut self)-> &mut Vec<f32>{
+        &mut self.spikes
+    }
+
 }
 
 impl Node for Neuron{
@@ -71,14 +81,8 @@ impl Node for Neuron{
         if input != 0.0{
             self.inputs.push((input, 1.0));
         }
-        if self.id == 0{
-            println!("Input: {:.?}", self.inputs);
-        }
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
-        if self.id == 0{
-            println!("V: {}", self.v)
-        }
         self.u += self.a * (self.b * self.v - self.u) * dt;
         if self.v > self.th{
             self.v = self.th;

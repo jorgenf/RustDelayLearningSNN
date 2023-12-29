@@ -4,13 +4,20 @@ use crate::nodes::node_update;
 use crate::nodes::Node;
 use crate::connections::Synapse;
 use crate::connections::InputConnection;
+use crate::plotting;
 
-
+use chrono;
 use std::collections::HashMap;
+use rand::Error;
 use rand::Rng;
-use std::io::Write;
 use std::time::Instant;
 use memory_stats::memory_stats;
+use std::fs::{File, create_dir};
+use std::io::{BufWriter, Write};
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
+
+use std::process::Command;
 
 
 static mut WEIGHT : f32 = 10.0;
@@ -59,7 +66,7 @@ impl Population{
             if spike{
                 for id in &mut input.input_connections{
                     let connection = self.input_connections.get_mut(id).unwrap();
-                    connection.add_spike()
+                    connection.add_spike();
                 }
             }
             
@@ -72,13 +79,8 @@ impl Population{
             for pre_syn in &mut neuron.pre_synapses{
                 let syn = self.synapses.get_mut(pre_syn).unwrap();
                 let spikes = syn.get_spikes(self.t);
-                println!("D  {}: {}",syn.pre_neuron, syn.delay);
                 i += spikes;
-            }
-            if *_id == 2{
-                println!("I: {}",i);
-            }
-           
+            }           
             let spike : bool = node_update(neuron, self.t, self.dt, i);
             if spike{
                 let mut arrival_times: Vec<f32> = Vec::new();
@@ -101,21 +103,27 @@ impl Population{
                     let syn = self.synapses.get_mut(&post_syn).unwrap();
                     syn.add_spike(self.t);
                 }
+        
+        
             }
+        }
+        for (i,syn) in &mut self.synapses{
+            syn.update(self.t);
         }
     }
 
     pub fn run(&mut self, duration : f32){
         println!("--- Running Simulation {} ---", self.name);
-        println!("Duration: {}", duration);
+        println!("Duration: {}ms", duration);
         println!("Number of neurons: {}", self.neurons.len());
         println!("Number of synapses: {}", self.synapses.len());
+        self.dir = "output_data/".to_owned() + &chrono::offset::Local::now().to_string().replace(":", ".")[..19].to_string();
         let start = Instant::now();
         let mut max_mem = 0.0;
         while self.t < duration {
             let progress = (self.t / duration)*100.0;
             let _ = std::io::stdout().flush().unwrap();
-            print!("\rProgress: {:.1}%     Time: {:.1}ms\n", progress, self.t);
+            print!("\rProgress: {:.1}%     Simulated time: {:.1}ms    Elapsed real time: {:.1}s", progress, self.t, start.elapsed().as_secs());
             self.update();
             self.t += self.dt;
             self.t = f32::round(self.t*10.0)/10.0;
@@ -123,26 +131,19 @@ impl Population{
                 max_mem = f32::max(usage.physical_mem as f32, max_mem);
             }
         }
+        self.compile_data();
         let stop = start.elapsed();
         println!("\n\n--- Simulation finished ---");
-        println!("Simulation time: {}s", stop.as_millis()/1000);
+        println!("Elapsed time: {}s", stop.as_secs());
         let mut spikes = 0;
         for (_id, neuron) in &mut self.neurons{
             spikes += neuron.spikes.len();
         }
         println!("Total spikes: {}", spikes);
         println!("Spikes per neuron: {:.1}", spikes/self.neurons.len());
-        for (id, neuron) in &mut self.neurons{
-            println!("ID: {} Spikes: {}", id, neuron.spikes.len());
-        }
-        println!("Input Spikes: {:?}", self.inputs.get_mut(&0).unwrap().spikes);
-        println!("Input Spikes: {:?}", self.inputs.get_mut(&1).unwrap().spikes);
-
-        println!("Spikes: {:?}", self.neurons.get_mut(&0).unwrap().spikes);
-        println!("Spikes: {:?}", self.neurons.get_mut(&1).unwrap().spikes);
-        println!("Spikes: {:?}", self.neurons.get_mut(&2).unwrap().spikes);
         println!("Max memory usage: {:.1}MB", max_mem/1000000.0);
         
+
     }
 
     fn get_spikes(&mut self, id : i32, t : f32)->f32{
@@ -150,6 +151,49 @@ impl Population{
         syn.get_spikes(t)
     }
 
+    fn compile_data(&mut self){
+        let _result = create_dir(self.dir.clone());
+        
+        let mut spike_data : HashMap<String, Vec<f32>> = HashMap::new();
+        let mut v_data : HashMap<String, Vec<f32>> = HashMap::new();
+        let mut u_data : HashMap<String, Vec<f32>> = HashMap::new();
+        for (id, neuron) in &mut self.neurons{
+            spike_data.insert(id.to_string(), neuron.get_spikes().to_vec());
+            v_data.insert(id.to_string(), neuron.get_v().to_vec());
+            u_data.insert(id.to_string(), neuron.get_u().to_vec());
+        }
+        let mut delay_data : HashMap<String, Vec<(f32,f32)>> = HashMap::new();
+        for (id, syn) in &mut self.synapses{
+            let key = syn.pre_neuron.to_string() + "_" + &syn.post_neuron.to_string();
+            delay_data.insert(key , syn.get_delays().to_owned());
+        }
+        
+        let spike_json = serde_json::to_string(&spike_data).unwrap();
+        let _result = self.write_json( self.dir.clone() + "/spike_data.json", spike_json);
+        
+        let v_json = serde_json::to_string(&v_data).unwrap();
+        let _result = self.write_json(self.dir.clone() + "/v_data.json", v_json);
+
+        let u_json = serde_json::to_string(&u_data).unwrap();
+        let _result = self.write_json(self.dir.clone() + "/u_data.json", u_json);
+
+        let delay_json = serde_json::to_string(&delay_data).unwrap();
+        let _result = self.write_json(self.dir.clone() + "/delay_data.json", delay_json);
+        //self.plot_data(self.dir.clone());
+        
+        plotting::plot_delays(&self.dir, self.t,  20.0, delay_data);
+
+    }
+
+    fn write_json(&mut self, path : String, data : String)->std::io::Result<()>{
+        let mut spike_file = File::create(path)?;
+        spike_file.write_all(data.as_bytes())?;
+        Ok(())
+    }
+
+    fn plot_data(&mut self, path : String){
+        Command::new("python").args(["plot_data.py", &path]).output().expect("");
+    }
 
     pub fn get_size(&mut self)->usize{
         self.neurons.len()
@@ -191,8 +235,18 @@ impl Population{
                     for neuron_j in nodes_per_layer*(layer + 1)..nodes_per_layer*(layer+2){
                         let prob : f32 = rng.gen();
                         if prob < p{
-                            let w = f32::round(rng.gen_range(w_min..w_max) * 10.0)/10.0;
-                            let d = f32::round(rng.gen_range(d_min..d_max) * 10.0)/10.0;
+                            let d : f32;
+                            let w : f32;
+                            if d_min == d_max{
+                                d = d_min;
+                            }else{
+                                d = f32::round(rng.gen_range(d_min..d_max) * 10.0)/10.0;
+                            }
+                            if w_min == w_max{
+                                w = w_min;
+                            }else{
+                                w = f32::round(rng.gen_range(w_min..w_max) * 10.0)/10.0;
+                            }
                             self.create_synapse(neuron_i, neuron_j, w, d, 7.0, 7.0, true, false, false, self.declining_learning_rate)
                         }
                 }
