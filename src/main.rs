@@ -28,15 +28,15 @@ fn main() {
         }
         pool.join();
         */
-        let mut pop = Population::new(0.1, String::from("."), String::from("test"), false);
-        pop.create_feed_forward(50, 100, 1.0, 1.0, 1.0, 20.0, 20.0);
+        let mut pop = Population::new(0.1, String::from("."), String::from("test"), true);
+        pop.create_feed_forward(2, 3, 1.0, 1.0, 1.0, 20.0, 20.0);
         
-        for i in 0..10{
+        for i in 0..3{
             pop.create_input(vec![i], 0.0, vec![i as f32 + 0.1], 20.0);
         }
         
-        pop.run(100.0);
-         
+        pop.run(200.0);
+
         
          
     

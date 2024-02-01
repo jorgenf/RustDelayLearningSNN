@@ -139,6 +139,9 @@ impl Population{
         for (_id, neuron) in &mut self.neurons{
             spikes += neuron.spikes.len();
         }
+        for (_id , synapse) in &mut self.synapses{
+            print!("Synapse: {}-{} delay: {}\n", synapse.pre_neuron, synapse.post_neuron, synapse.delay);
+        }
         println!("Total spikes: {}", spikes);
         println!("Spikes per neuron: {:.1}", spikes/self.neurons.len());
         println!("Max memory usage: {:.1}MB", max_mem/1000000.0);
