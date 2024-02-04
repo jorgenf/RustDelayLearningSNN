@@ -1,11 +1,10 @@
-use std::collections::HashMap;
+use std::{borrow::BorrowMut, collections::HashMap};
 use rand::Rng;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use crate::population::Population;
+use crate::{population::Population, connections::{Synapse, InputConnection}, input::Input};
 
-pub trait Node{
-    fn update(&mut self, t : f32, dt : f32, i : f32)->bool;
-}
 
 pub struct Neuron{
     pub id : i32,
@@ -16,9 +15,9 @@ pub struct Neuron{
     u : f32,
     th : f32,
     v : f32,
-    pub pre_synapses : Vec<i32>,
-    pub post_synapses : Vec<i32>,
-    pub input_connections : Vec<i32>,
+    pub pre_synapses : Vec<Rc<RefCell<Synapse>>>,
+    pub post_synapses : Vec<Rc<RefCell<Synapse>>>,
+    pub input_connections : Vec<Rc<RefCell<InputConnection>>>,
     v_hist : Vec<f32>,
     u_hist : Vec<f32>,
     pub spikes : Vec<f32>,
@@ -45,9 +44,6 @@ impl Neuron{
                 inputs : Vec::new()
                 }
 }
-    pub fn get_synapse_ids(&mut self)->(&mut Vec<i32>, &mut Vec<i32>){
-        (&mut self.pre_synapses, &mut self.post_synapses)
-    }
 
     pub fn get_v(&mut self)-> &mut Vec<f32>{
         &mut self.v_hist
@@ -61,93 +57,64 @@ impl Neuron{
         &mut self.spikes
     }
 
-}
+    fn train_synapses(&mut self, t : f32){
 
-impl Node for Neuron{
-    fn update(&mut self, t : f32, dt : f32, input : f32) ->bool{
-        let mut i : f32 = input;
-        let mut remove_indexes : Vec<i32> = Vec::new();
-        for (index, (inp, counter)) in self.inputs.iter_mut().enumerate(){
+        let mut pre_arrival_times = Vec::new();
+        let mut pre = Vec::new();
+        for syn in self.pre_synapses.iter(){
+            let avg_arrival_t = syn.as_ref().borrow_mut().get_avg_arrival_time(t);
+            if avg_arrival_t < 0.0{
+                pre_arrival_times.push(avg_arrival_t);
+                pre.push(syn);
+            }else if avg_arrival_t > 0.0{
+                syn.as_ref().borrow_mut().train(t, avg_arrival_t);
+            }
+            
+        }
+        if !pre_arrival_times.is_empty(){
+            let sum : f32 = pre_arrival_times.iter().sum();
+            let avg_pre_arrival_time = sum / pre_arrival_times.len() as f32;
+            for syn in pre{
+                syn.as_ref().borrow_mut().train(t, avg_pre_arrival_time);
+            }   
+        }
+    }
+
+    pub fn update(&mut self, t : f32, dt : f32){
+        let mut input = 0.0;
+        for syn in self.input_connections.iter(){
+            syn.as_ref().borrow_mut().get_spike();
+        }
+        for syn in self.pre_synapses.iter(){
+            input += syn.as_ref().borrow_mut().get_spikes(t);
+        }
+        let mut i = 0.0;
+        for (inp, counter) in self.inputs.iter_mut(){
             *counter -= dt;
             if counter > &mut 0.0{
                 i += *inp;
-            }else{
-                remove_indexes.push(index as i32);
             }
         }
-        for ri in remove_indexes{
-            self.inputs.remove(ri as usize);
-        }
+        self.inputs.retain(|x| x.0 != 0.0);
         if input != 0.0{
             self.inputs.push((input, 1.0));
         }
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
         self.v += 0.5 * (0.04 * f32::powi(self.v, 2) + 5.0 * self.v + 140.0 - self.u + i) * dt;
         self.u += self.a * (self.b * self.v - self.u) * dt;
-        if self.v > self.th{
-            self.v = self.th;
-        }
-        self.v_hist.push(self.v);
-        self.u_hist.push(self.u);
         if self.v >= self.th{
+            self.v = self.th;
             self.v = self.c;
             self.u += self.d;
             self.spikes.push(t);
             self.inputs.clear();
-            return true;
-        }else{
-            return false;
-        }
-    }
-}
-
-
-
-pub fn node_update<T: Node>(node: &mut T, t : f32, dt : f32, i : f32)-> bool {
-    node.update(t, dt, i)
-}
-
-pub struct Input{ 
-    pub id : i32,
-    pub spikes : Vec<f32>,
-    pub spike_times : Vec<f32>,
-    pub p : f32,
-    pub input_connections : Vec<i32>
-}
-
-
-impl Input{
-    pub fn new(id : i32, p : f32, spike_times : Vec<f32>) -> Self{
-       
-        Self {
-                id,
-                spikes : Vec::new(),
-                spike_times,
-                p, 
-                input_connections : Vec::new()
+            for post in self.post_synapses.iter(){
+                post.as_ref().borrow_mut().add_spike(t);
             }
-  
+            self.train_synapses(t);
+
         }
-
-        pub fn add_connection(&mut self, connection : i32){
-            self.input_connections.push(connection);
-        }
-        
-}
-
-
-impl Node for Input{
-    fn update(&mut self, t : f32, dt : f32, i : f32)->bool {
-        let mut rng = rand::thread_rng();
-        let prob : f32 = rng.gen();
-        if !self.spike_times.is_empty() && self.spike_times.contains(&t){
-            self.spikes.push(t);
-            return true;
-            
-        }else if  prob < self.p{
-            self.spikes.push(t);
-            return true;
-            }
-        false
+        self.v_hist.push(self.v);
+        self.u_hist.push(self.u);
     }
 }

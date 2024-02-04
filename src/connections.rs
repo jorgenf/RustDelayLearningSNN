@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::population::Population;
+
 static mut MAX_DELAY : f32 = 20.0;
 
 
@@ -63,46 +65,37 @@ impl Synapse{
         return i;
     }
 
+    pub fn train(&mut self, t : f32, avg_arrival_t : f32){
+        if avg_arrival_t < 0.0{
+            self.f_func(t, avg_arrival_t.abs());
+        }else if avg_arrival_t > 0.0{
+            self.g_func(t, avg_arrival_t);
+        }
+    }
+
+    pub fn get_avg_arrival_time(&mut self, spike_time : f32)-> f32{
+        let mut spike_hist = self.spike_history.clone();
+        spike_hist.retain(|x| (x + self.delay) - spike_time > -self.pre_window && (x + self.delay) - spike_time < 0.0);
+        if spike_hist.is_empty(){
+            let mut spike_hist = self.spike_history.clone();
+            spike_hist.retain(|x| (x + self.delay) - spike_time < self.post_window && (x + self.delay) - spike_time > 0.0);
+            let sum : f32 = spike_hist.iter().sum();
+            return sum / spike_hist.len() as f32;
+        }else{
+            let sum : f32 = spike_hist.iter().sum();
+            return -sum / spike_hist.len() as f32;
+        }
+    }
+
     pub fn get_spike_history(&mut self)-> &mut Vec<(f32, f32)>{
         &mut self.delay_history
     }
 
-    pub fn update(&mut self, t : f32){
+    pub fn store_delay(&mut self, t : f32){
         self.delay_history.push((t, self.delay));
     }
 
-    pub fn get_avg_arrival_t(&mut self, spike_time : f32)-> Vec<f32>{
-        let mut pre : Vec<f32> = Vec::new();
-        if self.delay_trainable{
-            let mut post : Vec<f32> = Vec::new();
-            for syn_spike in &mut self.spike_history{
-                let t_dist = (*syn_spike + self.delay) - spike_time; 
-                if t_dist > self.pre_window{
-                    break;
-                }else if  t_dist < 0.0 && t_dist > self.post_window{
-                    post.push(t_dist);
-                }else if t_dist != 0.0{
-                    pre.push(t_dist);
-                }
-            }
-            let post_len = post.len();
-            let mut sum_post = 0.0;
-            for i in post{
-                sum_post += i;
-            }
-            if pre.is_empty(){
-                self.g_func(sum_post/ post_len as f32);
-            }
-        }
-        let mut sum = 0.0;
-        for spike in &pre{
-            sum += spike;
-        }
-        self.average_arrival_time = sum / pre.len() as f32;
-        pre  
-        }
-
-    pub fn f_func(&mut self, pop_average_arrival_time : f32){
+    fn f_func(&mut self, t : f32, pop_average_arrival_time : f32){
         let delta_t_dist =  self.average_arrival_time - pop_average_arrival_time;
         let delta_d = -3.0 * libm::tanh((delta_t_dist as f64) / 3.0);
         unsafe{
@@ -110,17 +103,18 @@ impl Synapse{
             self.delay = f32::max(self.delay, 0.1);
             self.delay = f32::round(self.delay * 10.0)/10.0;
         }
-        //self.delay_history.insert(t, self.delay);
+        self.store_delay(t);
         
     }
 
-    pub fn g_func(&mut self, avg_post : f32){
+    fn g_func(&mut self, t : f32, avg_post : f32){
         let dd = (3.0 / 2.0) * libm::tanh((2.5625 - 0.625 * avg_post) as f64) + 1.5;
         unsafe{
             self.delay += dd as f32;
             self.delay = f32::min(f32::round(self.delay * 10.0)/10.0, MAX_DELAY);
             
         }
+        self.store_delay(t);
     }
 
     pub fn get_delays(&mut self)->&mut Vec<(f32, f32)>{
@@ -143,7 +137,7 @@ impl InputConnection{
         Self {id, input_i, neuron_j, spike : false, weight }
     }
 
-    pub fn get_spike(&mut self, t : f32)-> f32{
+    pub fn get_spike(&mut self)-> f32{
         if self.spike{
             self.spike = false;
             return self.weight;

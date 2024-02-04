@@ -2,6 +2,7 @@ mod population;
 use population::Population;
 mod nodes;
 mod connections;
+mod input;
 mod plotting;
 use std::thread;
 use std::time::Duration;

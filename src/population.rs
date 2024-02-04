@@ -1,12 +1,11 @@
 use crate::nodes::Neuron;
-use crate::nodes::Input;
-use crate::nodes::node_update;
-use crate::nodes::Node;
+use crate::input::Input;
 use crate::connections::Synapse;
 use crate::connections::InputConnection;
 use crate::plotting;
 
 use chrono;
+use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use rand::Error;
 use rand::Rng;
@@ -16,6 +15,8 @@ use std::fs::{File, create_dir};
 use std::io::{BufWriter, Write};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use std::process::Command;
 
@@ -29,10 +30,9 @@ pub struct Population{
     dir : String,
     name : String,
     save_delays : bool,
-    neurons : HashMap<i32, Neuron>,
-    inputs : HashMap<i32, Input>,
-    synapses : HashMap<i32, Synapse>,
-    input_connections : HashMap<i32, InputConnection>,
+    neurons : Vec<Rc<RefCell<Neuron>>>,
+    synapses : Vec<Rc<RefCell<Synapse>>>,
+    inputs : Vec<Input>,
     declining_learning_rate : bool,
     neuron_id : i32,
     synapse_id : i32,
@@ -48,10 +48,9 @@ impl Population{
             dir,
             name,
             save_delays,
-            neurons : HashMap::new(),
-            inputs : HashMap::new(),
-            synapses : HashMap::new(),
-            input_connections : HashMap::new(),
+            neurons : Vec::new(),
+            synapses : Vec::new(),
+            inputs : Vec::new(),
             declining_learning_rate : false,
             neuron_id : 0,
             synapse_id : 0, 
@@ -61,54 +60,11 @@ impl Population{
     }
 
     fn update(&mut self){
-        for (_id, input) in &mut self.inputs{
-            let spike = input.update(self.t, self.dt, 0.0);
-            if spike{
-                for id in &mut input.input_connections{
-                    let connection = self.input_connections.get_mut(id).unwrap();
-                    connection.add_spike();
-                }
-            }
-            
+        for input in &mut self.inputs{
+            input.update(self.t);
         }
-        for (_id, neuron )in &mut self.neurons{
-            let mut i = 0.0;
-            for input_connection in &mut neuron.input_connections{
-                i += self.input_connections.get_mut(&input_connection).unwrap().get_spike(self.t);
-            }     
-            for pre_syn in &mut neuron.pre_synapses{
-                let syn = self.synapses.get_mut(pre_syn).unwrap();
-                let spikes = syn.get_spikes(self.t);
-                i += spikes;
-            }           
-            let spike : bool = node_update(neuron, self.t, self.dt, i);
-            if spike{
-                let mut arrival_times: Vec<f32> = Vec::new();
-                for pre_syn in &mut neuron.pre_synapses{
-                    let mut syn_arrival_times = self.synapses.get_mut(&pre_syn).unwrap().get_avg_arrival_t(self.t);
-                    arrival_times.append(&mut syn_arrival_times);
-                }
-                let length = arrival_times.len();
-                let mut sum = 0.0;
-                for time in arrival_times{
-                    sum += time;
-                }
-                let avg_spike_arrival_time = sum / length as f32;
-
-                for pre_syn in &mut neuron.pre_synapses{
-                    let syn = self.synapses.get_mut(pre_syn).unwrap();
-                    syn.f_func(avg_spike_arrival_time);
-                }
-                for post_syn in &mut neuron.post_synapses{
-                    let syn = self.synapses.get_mut(&post_syn).unwrap();
-                    syn.add_spike(self.t);
-                }
-        
-        
-            }
-        }
-        for (i,syn) in &mut self.synapses{
-            syn.update(self.t);
+        for neuron in &mut self.neurons{
+            neuron.as_ref().borrow_mut().update(self.t, self.dt);
         }
     }
 
@@ -136,11 +92,14 @@ impl Population{
         println!("\n\n--- Simulation finished ---");
         println!("Elapsed time: {}s", stop.as_secs());
         let mut spikes = 0;
-        for (_id, neuron) in &mut self.neurons{
-            spikes += neuron.spikes.len();
+        for neuron in &mut self.neurons{
+            spikes += neuron.as_ref().borrow_mut().spikes.len();
         }
-        for (_id , synapse) in &mut self.synapses{
-            print!("Synapse: {}-{} delay: {}\n", synapse.pre_neuron, synapse.post_neuron, synapse.delay);
+        for synapse in self.synapses.iter(){
+            let pre = synapse.as_ref().borrow_mut().pre_neuron;
+            let post = synapse.as_ref().borrow_mut().post_neuron;
+            let delay = synapse.as_ref().borrow_mut().delay;
+            print!("Synapse: {}-{} delay: {}\n", pre, post, delay);
         }
         println!("Total spikes: {}", spikes);
         println!("Spikes per neuron: {:.1}", spikes/self.neurons.len());
@@ -149,26 +108,26 @@ impl Population{
 
     }
 
-    fn get_spikes(&mut self, id : i32, t : f32)->f32{
-        let syn = self.synapses.get_mut(&id).unwrap();
-        syn.get_spikes(t)
-    }
-
     fn compile_data(&mut self){
         let _result = create_dir(self.dir.clone());
         
         let mut spike_data : HashMap<String, Vec<f32>> = HashMap::new();
         let mut v_data : HashMap<String, Vec<f32>> = HashMap::new();
         let mut u_data : HashMap<String, Vec<f32>> = HashMap::new();
-        for (id, neuron) in &mut self.neurons{
-            spike_data.insert(id.to_string(), neuron.get_spikes().to_vec());
-            v_data.insert(id.to_string(), neuron.get_v().to_vec());
-            u_data.insert(id.to_string(), neuron.get_u().to_vec());
+        for neuron in &mut self.neurons{
+            let spikes = neuron.as_ref().borrow_mut().get_spikes().to_vec();
+
+            spike_data.insert(neuron.as_ref().borrow_mut().id.to_string(), spikes);
+            let v = neuron.as_ref().borrow_mut().get_v().to_vec();
+            v_data.insert(neuron.as_ref().borrow_mut().id.to_string(), v);
+            let u = neuron.as_ref().borrow_mut().get_u().to_vec();
+            u_data.insert(neuron.as_ref().borrow_mut().id.to_string(), u);
         }
         let mut delay_data : HashMap<String, Vec<(f32,f32)>> = HashMap::new();
-        for (id, syn) in &mut self.synapses{
-            let key = syn.pre_neuron.to_string() + "_" + &syn.post_neuron.to_string();
-            delay_data.insert(key , syn.get_delays().to_owned());
+        for syn in self.synapses.iter(){
+            let post = &syn.as_ref().borrow_mut().post_neuron.to_string();
+            let key = syn.as_ref().borrow_mut().pre_neuron.to_string() + "_" + post;
+            delay_data.insert(key , syn.as_ref().borrow_mut().get_delays().to_owned());
         }
         
         let spike_json = serde_json::to_string(&spike_data).unwrap();
@@ -205,27 +164,26 @@ impl Population{
     pub fn create_input(&mut self, neurons : Vec<i32>, p : f32, spike_times: Vec<f32>, w : f32){
         let mut input = Input::new(self.input_id, p, spike_times);
         for neuron in neurons{
-            input.add_connection(self.input_connection_id);
-            self.neurons.get_mut(&neuron).unwrap().input_connections.push(self.input_connection_id);
-            self.create_input_connection(self.input_id, neuron, w);
+            let input_connection = self.create_input_connection(self.input_id, neuron, w);
+            input.add_connection(Rc::clone(&input_connection));
+            let n = self.neurons.iter().find(|x| x.as_ref().borrow_mut().id == neuron).unwrap().as_ref().borrow_mut().input_connections.push(Rc::clone(&input_connection));
         }
-        self.inputs.insert(self.input_id, input);
+        self.inputs.push(input);
         self.input_id += 1;
     }
 
     pub fn create_synapse(&mut self, neuron_i : i32, neuron_j : i32, weight : f32, delay : f32, pre_window : f32, post_window : f32,  delay_trainable : bool, weight_trainable : bool, partial_delay_learning : bool, declining_learning_rate : bool){
-        let syn = Synapse::new(self.synapse_id, neuron_i, neuron_j, weight, delay, pre_window, post_window, delay_trainable, weight_trainable, partial_delay_learning, self.declining_learning_rate);
-        self.neurons.get_mut(&neuron_i).unwrap().post_synapses.push(syn.id);
-        self.neurons.get_mut(&neuron_j).unwrap().pre_synapses.push(syn.id);
+        let syn = Rc::new(RefCell::new(Synapse::new(self.synapse_id, neuron_i, neuron_j, weight, delay, pre_window, post_window, delay_trainable, weight_trainable, partial_delay_learning, self.declining_learning_rate)));
+        self.neurons.iter().find(|x| x.as_ref().borrow_mut().id == neuron_i).unwrap().as_ref().borrow_mut().post_synapses. push(syn.clone());
+        self.neurons.iter().find(|x| x.as_ref().borrow_mut().id == neuron_j).unwrap().as_ref().borrow_mut().pre_synapses.push(syn.clone());
         self.synapse_id += 1;
-        self.synapses.insert(syn.id, syn);
+        self.synapses.push(syn.clone());
     }
 
-    fn create_input_connection(&mut self, input_neuron : i32, neuron : i32, weight : f32){
-        let input_connection = InputConnection::new(self.input_connection_id, input_neuron, neuron, weight);
+    fn create_input_connection(&mut self, input_neuron : i32, neuron : i32, weight : f32)->Rc<RefCell<InputConnection>>{
+        let input_connection = Rc::new(RefCell::new(InputConnection::new(self.input_connection_id, input_neuron, neuron, weight)));
         self.input_connection_id += 1;
-        self.input_connections.insert(input_connection.id, input_connection);
-
+        input_connection
     }
 
     pub fn create_feed_forward(&mut self, layers : i32, nodes_per_layer : i32, p : f32, d_min : f32, d_max : f32, w_min : f32, w_max : f32){
@@ -258,9 +216,9 @@ impl Population{
     }
 
     pub fn create_neuron(&mut self){
-        let neuron = Neuron::new(self.neuron_id);
+        let neuron = Rc::new(RefCell::new(Neuron::new(self.neuron_id)));
         self.neuron_id += 1;
-        self.neurons.insert(neuron.id, neuron);
+        self.neurons.push(neuron);
     }
 
     fn create_reservoir(&mut self){
