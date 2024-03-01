@@ -1,0 +1,2 @@
+layers, nodes_per_layer, p, d_min, d_max, w_min, w_max
+3, 10, 0.2, 10, d, max

@@ -2,30 +2,30 @@ use std::collections::HashMap;
 
 use crate::population::Population;
 
-static mut MAX_DELAY : f32 = 20.0;
+static mut MAX_DELAY :f64 = 20.0;
 
 
 pub struct Synapse{
     pub id : i32,
     pub pre_neuron : i32,
     pub post_neuron : i32,
-    weight : f32,
-    pub delay : f32,
-    pre_window : f32,
-    post_window : f32,
+    weight :f64,
+    pub delay :f64,
+    pre_window :f64,
+    post_window :f64,
     delay_trainable : bool,
     weight_trainable: bool,
     partial_delay_learning : bool,
-    declining_learning_rate :bool,
-    delay_history : Vec<(f32, f32)>,
-    spikes : Vec<f32>, 
-    spike_history : Vec<f32>,
-    average_arrival_time : f32,  
+    declining_learning_rate :f64,
+    delay_history : Vec<(f64,f64)>,
+    spikes : Vec<f64>, 
+    spike_history : Vec<f64>,
+    average_arrival_time :f64,  
 }
 
 
 impl Synapse{
-    pub fn new(id : i32, pre_neuron: i32, post_neuron : i32, weight : f32, delay : f32, pre_window : f32, post_window : f32, delay_trainable : bool, weight_trainable : bool, partial_delay_learning : bool, declining_learning_rate : bool)->Self{
+    pub fn new(id : i32, pre_neuron: i32, post_neuron : i32, weight :f64, delay :f64, pre_window :f64, post_window :f64, delay_trainable : bool, weight_trainable : bool, partial_delay_learning : bool, declining_learning_rate : f64)->Self{
         Self {
             id,
             pre_neuron,
@@ -38,19 +38,19 @@ impl Synapse{
             weight_trainable,
             partial_delay_learning, 
             declining_learning_rate, 
-            delay_history: Vec::new(), 
+            delay_history: vec![(0.0, delay)], 
             spikes: Vec::new(),
             spike_history : Vec::new(),
-            average_arrival_time : 0.0
+            average_arrival_time : 0.0,
          }
     }
 
-    pub fn add_spike(&mut self, t : f32){
+    pub fn add_spike(&mut self, t :f64){
         self.spikes.push(t);
         self.spike_history.insert(0, t);
     }
 
-    pub fn get_spikes(&mut self, t : f32)->f32{
+    pub fn get_spikes(&mut self, t :f64)->f64{
         let mut i = 0.0;
         let mut index = 0;
         for spike in &mut self.spikes{
@@ -65,59 +65,65 @@ impl Synapse{
         return i;
     }
 
-    pub fn train(&mut self, t : f32, avg_arrival_t : f32){
-        if avg_arrival_t < 0.0{
-            self.f_func(t, avg_arrival_t.abs());
-        }else if avg_arrival_t > 0.0{
-            self.g_func(t, avg_arrival_t);
+    pub fn train(&mut self, t :f64, avg_arrival_t :f64){
+        if self.delay_trainable{
+            if avg_arrival_t < 0.0{
+                self.f_func(t, avg_arrival_t);
+            }else if avg_arrival_t > 0.0 && !self.partial_delay_learning{
+                self.g_func(t, avg_arrival_t);
+            }
         }
     }
 
-    pub fn get_avg_arrival_time(&mut self, spike_time : f32)-> f32{
+    pub fn get_avg_arrival_time(&mut self, spike_time :f64)->f64{
         let mut spike_hist = self.spike_history.clone();
-        spike_hist.retain(|x| (x + self.delay) - spike_time > -self.pre_window && (x + self.delay) - spike_time < 0.0);
+        spike_hist.retain(|x| (x + self.delay) - spike_time > self.pre_window && (x + self.delay) - spike_time < 0.0);
         if spike_hist.is_empty(){
             let mut spike_hist = self.spike_history.clone();
             spike_hist.retain(|x| (x + self.delay) - spike_time < self.post_window && (x + self.delay) - spike_time > 0.0);
-            let sum : f32 = spike_hist.iter().sum();
-            return sum / spike_hist.len() as f32;
+            let mut sum :f64 = spike_hist.iter().sum();
+            sum += self.delay * spike_hist.len() as f64;
+            self.average_arrival_time = sum / spike_hist.len() as f64;
+            return self.average_arrival_time;
         }else{
-            let sum : f32 = spike_hist.iter().sum();
-            return -sum / spike_hist.len() as f32;
+            let mut sum :f64 = spike_hist.iter().sum();
+            sum += self.delay * spike_hist.len() as f64;
+            self.average_arrival_time = -sum / spike_hist.len() as f64;
+            return self.average_arrival_time;
         }
     }
 
-    pub fn get_spike_history(&mut self)-> &mut Vec<(f32, f32)>{
+    pub fn get_spike_history(&mut self)-> &mut Vec<(f64,f64)>{
         &mut self.delay_history
     }
 
-    pub fn store_delay(&mut self, t : f32){
+    pub fn store_delay(&mut self, t :f64){
         self.delay_history.push((t, self.delay));
     }
 
-    fn f_func(&mut self, t : f32, pop_average_arrival_time : f32){
-        let delta_t_dist =  self.average_arrival_time - pop_average_arrival_time;
+    fn f_func(&mut self, t :f64, pop_average_arrival_time :f64){
+        let delta_t_dist =  pop_average_arrival_time - self.average_arrival_time;
         let delta_d = -3.0 * libm::tanh((delta_t_dist as f64) / 3.0);
         unsafe{
-            self.delay += f32::min(delta_d as f32, MAX_DELAY);
-            self.delay = f32::max(self.delay, 0.1);
-            self.delay = f32::round(self.delay * 10.0)/10.0;
+            self.delay +=f64::min(delta_d, MAX_DELAY);
+            self.delay =f64::max(self.delay, 0.1);
+            self.delay =f64::round(self.delay * 10.0)/10.0;
         }
         self.store_delay(t);
         
     }
 
-    fn g_func(&mut self, t : f32, avg_post : f32){
+    fn g_func(&mut self, t :f64, avg_post :f64){
         let dd = (3.0 / 2.0) * libm::tanh((2.5625 - 0.625 * avg_post) as f64) + 1.5;
         unsafe{
-            self.delay += dd as f32;
-            self.delay = f32::min(f32::round(self.delay * 10.0)/10.0, MAX_DELAY);
+            self.delay += dd as f64;
+            self.delay =f64::min(f64::round(self.delay * 10.0)/10.0, MAX_DELAY);
             
         }
         self.store_delay(t);
     }
 
-    pub fn get_delays(&mut self)->&mut Vec<(f32, f32)>{
+    pub fn get_delays(&mut self)->&mut Vec<(f64,f64)>{
         &mut self.delay_history
     }
 
@@ -129,15 +135,15 @@ pub struct InputConnection{
     input_i : i32,
     neuron_j : i32,
     spike : bool,
-    weight : f32,
+    weight :f64,
 }
 
 impl InputConnection{
-    pub fn new(id : i32, input_i : i32, neuron_j : i32, weight : f32)-> Self{
+    pub fn new(id : i32, input_i : i32, neuron_j : i32, weight :f64)-> Self{
         Self {id, input_i, neuron_j, spike : false, weight }
     }
 
-    pub fn get_spike(&mut self)-> f32{
+    pub fn get_spike(&mut self)->f64{
         if self.spike{
             self.spike = false;
             return self.weight;

@@ -2,18 +2,19 @@ use crate::connections::InputConnection;
 use rand::Rng;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 pub struct Input{ 
     pub id : i32,
-    pub spikes : Vec<f32>,
-    pub spike_times : Vec<f32>,
-    pub p : f32,
-    pub input_connections : Vec<Rc<RefCell<InputConnection>>>
+    pub spikes : Vec<f64>,
+    pub spike_times : Vec<f64>,
+    pub p : f64,
+    pub input_connections : Vec<Arc<Mutex<InputConnection>>>
 }
 
 
 impl Input{
-    pub fn new(id : i32, p : f32, spike_times : Vec<f32>) -> Self{
+    pub fn new(id : i32, p : f64, spike_times : Vec<f64>) -> Self{
        
         Self {
                 id,
@@ -24,13 +25,13 @@ impl Input{
             }
         }
         
-    pub fn add_connection(&mut self, input_connection : Rc<RefCell<InputConnection>>){
+    pub fn add_connection(&mut self, input_connection : Arc<Mutex<InputConnection>>){
         self.input_connections.push(input_connection);
     }
 
-    pub fn update(&mut self, t : f32){
+    pub fn update(&mut self, t : f64){
         let mut rng = rand::thread_rng();
-        let prob : f32 = rng.gen();
+        let prob : f64 = rng.gen();
         let mut spike = false;
         if !self.spike_times.is_empty() && self.spike_times.contains(&t){
             self.spikes.push(t);
@@ -41,7 +42,7 @@ impl Input{
             }
         if spike{
             for connection in &mut self.input_connections{
-                connection.borrow_mut().add_spike();
+                connection.lock().unwrap().add_spike();
         }
     }
     }
